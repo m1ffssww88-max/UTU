@@ -1007,23 +1007,16 @@
             addToCart(productId, st.color, st.size);
         }
 
-        // يبني رسالة واتساب خاصة بهذا المنتج بالذات (اسم + سعر + لون + قياس + رابط المنتج)
-        // ويفتحها مباشرة، فيصير لكل منتج "رابط حجز" مختلف يوصل الأدمن بكل تفاصيل الحجز جاهزة
+        // زر "احجز عبر واتساب" بصفحة المنتج كان يفتح واتساب فوراً بدون أخذ اسم/هاتف/عنوان الزبون.
+        // الحين يضيف المنتج للسلة (باللون والقياس المختارين) ويوديه مباشرة لنموذج "إتمام الطلب"
+        // الكامل (نفس نموذج السلة)، وبعد ما يعبي بياناته تنبني رسالة واتساب فيها كل التفاصيل
         function bookProductWhatsApp(productId) {
             const product = products.find(function(p) { return p.id === productId; });
             if (!product) return;
             const st = currentProductState[productId];
             if (!st || !st.color || !st.size) { showToast('الرجاء اختيار اللون والمقاس', 'warning'); return; }
-            const productUrl = window.location.href.split('#')[0] + '#product/' + productId;
-            let msg = 'مرحباً UTU - أوتو 👋\n';
-            msg += 'أريد حجز هذا المنتج:\n\n';
-            msg += '🏷️ المنتج: ' + product.name + '\n';
-            msg += '💰 السعر: ' + formatPrice(product.price) + '\n';
-            msg += '🎨 اللون: ' + st.color + '\n';
-            msg += '📏 القياس: ' + st.size + '\n';
-            msg += '🔢 الكمية: ' + (st.quantity || 1) + '\n';
-            msg += '🔗 رابط المنتج: ' + productUrl + '\n';
-            window.open('https://wa.me/9647838080404?text=' + encodeURIComponent(msg), '_blank');
+            addToCart(productId, st.color, st.size, st.quantity || 1);
+            router.navigate('checkout');
         }
 
         function showSizeChart(productId) {
