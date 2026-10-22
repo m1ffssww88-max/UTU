@@ -613,7 +613,7 @@
         // وهذا بالضبط كان سبب اختفاء منتجات جديدة ورجوع منتجات كانت انحذفت من جهاز ثاني
         function upsertAllProductsToFirestore(onDone) {
             const batch = db.batch();
-            products.forEach(function(p) { batch.set(db.collection('products').doc(String(p.id)), p); });
+            products.forEach(function(p) { batch.set(db.collection('products').doc(String(p.id)), JSON.parse(JSON.stringify(p))); });
             batch.commit().then(function() {
                 if (onDone) onDone(true);
             }).catch(function(e) {
@@ -668,12 +668,32 @@
             productsDirty = val;
             try { localStorage.setItem('utu_products_dirty', val ? '1' : '0'); } catch (e) {}
         }
-        function persistProducts() {
+        // عدّاد الكتابات الجارية: لا نلغي علم "تعديل محلي" إلا عندما تنتهي كل الكتابات فعلاً (يمنع ضياع منتج أُضيف بسرعة بعد غيره)
+        let productWritesInFlight = 0;
+        function cacheProductsLocally() {
+            try { localStorage.setItem('utu_products', JSON.stringify(products)); return true; }
+            catch (e) { showToast('تنبيه: ذاكرة المتصفح ممتلئة (الصور كبيرة)، الحفظ بالسحابة هو المعتمد', 'error'); return false; }
+        }
+        // يحفظ المنتجات المحددة فقط (كل منتج بمستند مستقل) حتى لا يعطّل منتج واحد كبير أو معطوب حفظ بقية المنتجات
+        function persistProducts(onlyIds) {
             setProductsDirty(true);
-            try { localStorage.setItem('utu_products', JSON.stringify(products)); } catch (e) {}
-            upsertAllProductsToFirestore(function(success) {
-                // إذا نجحت الكتابة بالسحابة، نلغي العلم لنسمح بعدها لتحديثات الأجهزة الثانية بالوصول لهذا الجهاز
-                if (success) setProductsDirty(false);
+            cacheProductsLocally();
+            // أي قسم جديد لم يصل للسحابة بعد نرسله أولاً، حتى لا يبقى المنتج مرتبطاً بقسم غير موجود بالسحابة
+            if (categoriesDirty) { upsertAllCategoriesToFirestore(function(ok) { if (ok) setCategoriesDirty(false); }); }
+            const list = onlyIds ? products.filter(function(p) { return onlyIds.indexOf(p.id) > -1; }) : products;
+            productWritesInFlight++;
+            Promise.all(list.map(function(p) {
+                const clean = JSON.parse(JSON.stringify(p)); // يحذف أي قيمة undefined (فايرستور يرفضها)
+                return db.collection('products').doc(String(p.id)).set(clean).then(function() { return true; }).catch(function(e) {
+                    console.error('فشل حفظ المنتج ' + p.id + ':', e);
+                    const big = JSON.stringify(clean).length > 950000;
+                    showToast('فشل حفظ المنتج "' + (p.name || p.id) + '" بالسحابة' + (big ? ' (الصورة كبيرة جداً، اختر صورة أصغر)' : ' (' + (e && e.code ? e.code : 'خطأ اتصال') + ')'), 'error');
+                    showSyncError('فشل حفظ منتج بمجموعة "products" على Firestore — الكود: ' + (e && e.code ? e.code : '؟') + ' — الرسالة: ' + (e && e.message ? e.message : String(e)));
+                    return false;
+                });
+            })).then(function(results) {
+                productWritesInFlight--;
+                if (results.every(Boolean) && productWritesInFlight === 0) setProductsDirty(false);
             });
         }
         function loadProductsFromStorage() {
@@ -2054,7 +2074,7 @@
                     const img = new Image();
                     img.onload = function() {
                         // نضغط الصورة قبل تخزينها حتى لا تتجاوز الحد الأقصى لحجم الحقل بفايرستور (1 ميغابايت)
-                        const dataUrl = compressImageToLimit(img, 700 * 1024);
+                        const dataUrl = compressImageToLimit(img, 400 * 1024);
                         imageInput.value = dataUrl;
                         document.getElementById('cf-preview-img').src = dataUrl;
                         showToast('تم تجهيز الصورة بنجاح');
@@ -2251,7 +2271,7 @@
                 img.onload = function() {
                     // نضغط لحد 700 كيلوبايت تقريباً (نفس الحد المعتمد بمشروعك الثاني) حتى تبقى
                     // مستندات فايرستور بعيدة عن حدها الأقصى (1 ميغابايت للمستند الواحد)
-                    const dataUrl = compressImageToLimit(img, 700 * 1024);
+                    const dataUrl = compressImageToLimit(img, 400 * 1024);
                     if (urlEl) urlEl.value = dataUrl;
                     if (previewEl) { previewEl.src = dataUrl; previewEl.classList.remove('hidden'); }
                     if (statusEl) statusEl.textContent = 'تم تجهيز الصورة ✅ (اضغط لتغييرها)';
@@ -2270,7 +2290,8 @@
         function saveProductForm(productId) {
             const name = document.getElementById('pf-name').value.trim();
             const checkedCatBoxes = document.querySelectorAll('#pf-categories .pf-cat-checkbox:checked');
-            const selectedCategories = Array.prototype.map.call(checkedCatBoxes, function(cb) { return cb.value; });
+            let selectedCategories = Array.prototype.map.call(checkedCatBoxes, function(cb) { return cb.value; });
+            selectedCategories = selectedCategories.filter(function(id) { return categories.some(function(c) { return c.id === id; }); });
             const price = Number(document.getElementById('pf-price').value) || 0;
             const oldPrice = null; // السعر القديم محذوف من المتجر والإدارة
             const image = document.getElementById('pf-image').value.trim() || 'https://images.unsplash.com/photo-1600861195091-690c92f1d2cb?w=500';
@@ -2286,6 +2307,7 @@
             const saveAmount = (oldPrice && oldPrice > price) ? (oldPrice - price) : 0;
             const colors = checkedColorBoxes.length ? Array.prototype.map.call(checkedColorBoxes, function(cb) { return { name: cb.value, code: cb.getAttribute('data-code'), available: true }; }) : [{ name: 'افتراضي', code: '#d4af37', available: true }];
 
+            let savedId = productId;
             if (productId !== null && productId !== undefined) {
                 const product = products.find(function(p) { return p.id === productId; });
                 if (product) {
@@ -2296,8 +2318,9 @@
                 }
                 showToast('تم حفظ التعديلات بنجاح');
             } else {
+                savedId = getNextProductId();
                 products.push({
-                    id: getNextProductId(), name: name, categories: selectedCategories, price: price, oldPrice: oldPrice, discount: discount, saveAmount: saveAmount,
+                    id: savedId, name: name, categories: selectedCategories, price: price, oldPrice: oldPrice, discount: discount, saveAmount: saveAmount,
                     images: [image], colors: colors, sizes: [{ name: 'قياسي', available: true }],
                     stock: stock, stockStatus: stock > 0 ? (stock < 6 ? 'low' : 'available') : 'out',
                     description: description,
@@ -2305,7 +2328,7 @@
                 });
                 showToast('تمت إضافة المنتج بنجاح');
             }
-            persistProducts();
+            persistProducts([savedId]);
             document.querySelectorAll('.modal-overlay').forEach(function(m) { m.remove(); });
             router.navigate('admin');
         }
@@ -2411,19 +2434,28 @@
         document.addEventListener('DOMContentLoaded', function() {
             loadCategoriesFromStorage();
             loadProductsFromStorage();
-            // ترحيل لمرة واحدة: حذف المنتجات القديمة نهائياً (محلياً ومن Firestore) واعتماد الكتالوج الجديد
-            if (localStorage.getItem('utu_catalog_v2') !== '1') {
-                products.length = 0;
-                DEFAULT_PRODUCTS.forEach(function(p) { products.push(JSON.parse(JSON.stringify(p))); });
-                try { localStorage.setItem('utu_products', JSON.stringify(products)); } catch (e) {}
-                setProductsDirty(true);
-                var newIds = products.map(function(p) { return String(p.id); });
-                db.collection('products').get().then(function(snap) {
-                    var batch = db.batch();
-                    snap.forEach(function(d) { if (newIds.indexOf(d.id) === -1) batch.delete(d.ref); });
-                    return batch.commit();
-                }).then(function() {
-                    upsertAllProductsToFirestore(function(ok) { if (ok) { setProductsDirty(false); try { localStorage.setItem('utu_catalog_v2', '1'); } catch (e) {} } });
+            // ترحيل لمرة واحدة على مستوى السحابة (وليس المتصفح): يُنفَّذ فقط إذا لم يوجد مستند العلامة meta/catalog_v2
+            // فلا يمكن أن يحذف منتجات أضافها الأدمن لاحقاً ولا أن يتكرر من جهاز آخر
+            if (localStorage.getItem('utu_catalog_v2') === '1') {
+                // هذا المتصفح نفّذ الترحيل سابقاً: نسجّل العلامة بالسحابة حتى لا تعيد الأجهزة الأخرى الحذف
+                db.collection('meta').doc('catalog_v2').set({ done: true, at: Date.now() }, { merge: true }).catch(function() {});
+            } else {
+                db.collection('meta').doc('catalog_v2').get().then(function(m) {
+                    if (m.exists) { try { localStorage.setItem('utu_catalog_v2', '1'); } catch (e) {} return; }
+                    return db.collection('products').get().then(function(snap) {
+                        const batch = db.batch();
+                        const newIds = DEFAULT_PRODUCTS.map(function(p) { return String(p.id); });
+                        snap.forEach(function(d) { if (newIds.indexOf(d.id) === -1) batch.delete(d.ref); });
+                        DEFAULT_PRODUCTS.forEach(function(p) { batch.set(db.collection('products').doc(String(p.id)), JSON.parse(JSON.stringify(p))); });
+                        batch.set(db.collection('meta').doc('catalog_v2'), { done: true, at: Date.now() });
+                        return batch.commit().then(function() {
+                            products.length = 0;
+                            DEFAULT_PRODUCTS.forEach(function(p) { products.push(JSON.parse(JSON.stringify(p))); });
+                            cacheProductsLocally();
+                            try { localStorage.setItem('utu_catalog_v2', '1'); } catch (e) {}
+                            router.refreshSoon();
+                        });
+                    });
                 }).catch(function(e) { console.error('فشل ترحيل الكتالوج:', e); });
             }
             loadOrdersFromStorage();
