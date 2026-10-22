@@ -168,6 +168,8 @@
         .badge-pill { display:inline-block; padding:6px 14px; border-radius:4px; background:linear-gradient(90deg,#4b1d3f,#c8284a); color:#fff; font-size:12px; font-weight:700; margin-bottom:8px; }
         .badge-new { color:#c8102e; font-size:14px; margin-bottom:2px; display:block; }
     </style>
+<link href="https://fonts.googleapis.com/css2?family=Cairo&family=Tajawal&family=Amiri&family=Reem+Kufi&family=Aref+Ruqaa&family=Lalezar&family=El+Messiri&family=Katibeh&family=Lateef&family=Harmattan&family=Noto+Naskh+Arabic&family=Noto+Kufi+Arabic&family=Changa&family=Mada&family=Almarai&family=Rakkas&family=Markazi+Text&family=Scheherazade+New&family=Mirza&family=Jomhuria&display=swap" rel="stylesheet">
+    <style>@font-face{font-family:"AlgerBlanche";src:local("AlgerBlanche"),local("Alger Blanche"),url("fonts/AlgerBlanche.ttf"),url("fonts/AlgerBlanche.otf"),url("AlgerBlanche.ttf");font-display:swap}</style>
 </head>
 <body class="font-cairo text-gray-100">
 
@@ -879,6 +881,73 @@
             } catch (e) {}
         }
 
+
+        // ==================== FONTS (خطوط النص المخصص) ====================
+        const FONT_LIST = [
+            {id:'cairo',name:'القاهرة',family:'Cairo'},{id:'tajawal',name:'تجوّل',family:'Tajawal'},{id:'amiri',name:'أميري',family:'Amiri'},
+            {id:'reem',name:'ريم كوفي',family:'Reem Kufi'},{id:'aref',name:'عارف رقعة',family:'Aref Ruqaa'},{id:'lalezar',name:'لاله زار',family:'Lalezar'},
+            {id:'messiri',name:'المسيري',family:'El Messiri'},{id:'katibeh',name:'كاتبة',family:'Katibeh'},{id:'lateef',name:'لطيف',family:'Lateef'},
+            {id:'harmattan',name:'هرمتان',family:'Harmattan'},{id:'naskh',name:'نسخ',family:'Noto Naskh Arabic'},{id:'kufi',name:'نوتو كوفي',family:'Noto Kufi Arabic'},
+            {id:'changa',name:'شانجا',family:'Changa'},{id:'mada',name:'مدى',family:'Mada'},{id:'almarai',name:'المراعي',family:'Almarai'},
+            {id:'rakkas',name:'رقّاص',family:'Rakkas'},{id:'markazi',name:'مركزي',family:'Markazi Text'},{id:'scheherazade',name:'شهرزاد',family:'Scheherazade New'},
+            {id:'mirza',name:'ميرزا',family:'Mirza'},{id:'jomhuria',name:'جمهورية',family:'Jomhuria'},
+            {id:'alger',name:'AlgerBlanche',family:'AlgerBlanche'}
+        ];
+        const customFonts = []; // خطوط مرفوعة من لوحة الإدارة (محفوظة بـ Firestore)
+        function allFonts() { return FONT_LIST.concat(customFonts); }
+        function getFont(id) { return allFonts().find(function(f) { return f.id === id; }); }
+        function fontStack(f) { return f ? "'" + f.family + "', 'Cairo', 'Noto Naskh Arabic', sans-serif" : 'inherit'; }
+        function registerCustomFont(d) {
+            try {
+                const ff = new FontFace(d.family, 'url(' + d.data + ')');
+                ff.load().then(function(face) { document.fonts.add(face); router.refreshSoon && router.refreshSoon(); }).catch(function(e) { console.error('تعذّر تحميل الخط', e); });
+            } catch (e) {}
+            const i = FONT_LIST.findIndex(function(f) { return f.id === d.id; });
+            if (i > -1) FONT_LIST[i].family = d.family; // مثلاً رفع ملف AlgerBlanche يستبدل المحلي
+            else if (!customFonts.some(function(f) { return f.id === d.id; })) customFonts.push({ id: d.id, name: d.name, family: d.family });
+        }
+        function syncFontsFromFirestore() {
+            db.collection('fonts').onSnapshot(function(snap) {
+                snap.forEach(function(doc) { const d = doc.data(); if (d && d.data) registerCustomFont({ id: doc.id, name: d.name, family: d.family, data: d.data }); });
+            }, function(e) { console.error('تعذّر تحميل الخطوط:', e); });
+        }
+        function uploadCustomFont(inputEl) {
+            const file = inputEl.files && inputEl.files[0]; if (!file) return;
+            if (file.size > 700 * 1024) { showToast('حجم ملف الخط كبير (الحد 700 كيلوبايت)', 'error'); inputEl.value = ''; return; }
+            const nameEl = document.getElementById('pf-font-name');
+            const name = (nameEl && nameEl.value.trim()) || file.name.replace(/\.[^.]+$/, '');
+            const isAlger = /alger/i.test(name) || /alger/i.test(file.name);
+            const id = isAlger ? 'alger' : 'f' + Date.now();
+            const family = isAlger ? 'AlgerBlanche' : 'CF' + Date.now();
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const d = { name: isAlger ? 'AlgerBlanche' : name, family: family, data: e.target.result };
+                db.collection('fonts').doc(id).set(d).then(function() { showToast('تمت إضافة الخط، اختاره من القائمة'); registerCustomFont({ id: id, name: d.name, family: family, data: d.data }); }).catch(function(err) { showToast('فشل رفع الخط: ' + (err && err.code ? err.code : ''), 'error'); });
+            };
+            reader.readAsDataURL(file); inputEl.value = '';
+        }
+        function itemExtra(item) { return item && item.text ? 'النص: ' + item.text + ' | الخط: ' + ((getFont(item.font) || {}).name || '') : ''; }
+        function itemExtraHtml(item) {
+            if (!item || !item.text) return '';
+            return '<p class="text-xs mt-1" style="font-family:' + fontStack(getFont(item.font)) + ';font-size:16px;color:#e6eaf4">✍️ ' + escapeHtml(item.text) + '</p>';
+        }
+        function setCustomText(productId, text) {
+            const st = currentProductState[productId]; if (!st) return;
+            st.text = text; updateTextPreview(productId);
+        }
+        function pickFont(productId, fontId, el) {
+            const st = currentProductState[productId]; if (!st) return;
+            st.font = fontId;
+            document.querySelectorAll('.font-chip-' + productId).forEach(function(b) { b.classList.remove('selected'); });
+            if (el) el.classList.add('selected');
+            updateTextPreview(productId);
+        }
+        function updateTextPreview(productId) {
+            const st = currentProductState[productId]; const box = document.getElementById('font-preview-' + productId); if (!st || !box) return;
+            box.style.fontFamily = fontStack(getFont(st.font));
+            box.textContent = st.text || 'اكتب النص هنا لمعاينته';
+            box.style.opacity = st.text ? 1 : .45;
+        }
         let currentProductState = {};
 
         // ==================== UTILITIES ====================
@@ -939,13 +1008,13 @@
         }
 
         // ==================== CART ====================
-        function addToCart(productId, color, size, quantity) {
-            quantity = quantity || 1;
+        function addToCart(productId, color, size, quantity, text, font) {
+            quantity = quantity || 1; text = text || ''; font = text ? (font || '') : '';
             const product = products.find(function(p) { return p.id === productId; });
             if (!product) return;
-            const existingItem = state.cart.find(function(item) { return item.productId === productId && item.color === color && item.size === size; });
+            const existingItem = state.cart.find(function(item) { return item.productId === productId && item.color === color && item.size === size && (item.text || '') === text && (item.font || '') === font; });
             if (existingItem) { existingItem.quantity += quantity; }
-            else { state.cart.push({productId:productId,color:color,size:size,quantity:quantity,price:product.price,name:product.name,image:product.images[0]}); }
+            else { state.cart.push({productId:productId,color:color,size:size,quantity:quantity,price:product.price,name:product.name,image:product.images[0],text:text,font:font}); }
             saveState(); updateCounters(); renderCart(); showToast('تمت إضافة المنتج إلى السلة');
         }
 
@@ -972,7 +1041,7 @@
                     '<img src="' + item.image + '" alt="' + item.name + '" class="w-20 h-20 object-cover rounded-lg">' +
                     '<div class="flex-1">' +
                     '<h4 class="font-bold text-sm mb-1">' + item.name + '</h4>' +
-                    '<p class="text-xs text-gray-400 mb-2">اللون: ' + item.color + ' | المقاس: ' + item.size + '</p>' +
+                    '<p class="text-xs text-gray-400 mb-2">اللون: ' + item.color + ' | المقاس: ' + item.size + '</p>' + itemExtraHtml(item) +
                     '<div class="flex items-center justify-between">' +
                     '<span class="font-bold text-accent">' + formatPrice(itemTotal) + '</span>' +
                     '<div class="flex items-center gap-2">' +
@@ -1237,7 +1306,7 @@
             const firstAvailableSize = product.sizes.find(function(s) { return s.available; });
             const selectedColor = firstAvailableColor ? firstAvailableColor.name : '';
             const selectedSize = firstAvailableSize ? firstAvailableSize.name : '';
-            currentProductState[productId] = { color: selectedColor, size: selectedSize, quantity: 1 };
+            currentProductState[productId] = { color: selectedColor, size: selectedSize, quantity: 1, text: '', font: (product.fonts && product.fonts[0]) || '' };
 
             return '<div class="max-w-7xl mx-auto px-4 py-8 fade-in">' +
                 '<div class="flex justify-end mb-4"><button onclick="router.back()" aria-label="إغلاق" class="w-11 h-11 rounded-full border border-gray-700 bg-[#1a2236] text-gray-100 flex items-center justify-center text-xl hover:border-accent hover:text-accent transition-colors"><i class="fas fa-times"></i></button></div>' +
@@ -1272,6 +1341,12 @@
                         'onclick="' + (s.available ? 'selectSizeDetail(' + productId + ', \'' + s.name + '\', this)' : 'showSizeUnavailableToast()') + '" ' +
                         (s.available ? '' : 'disabled') + '>' + s.name + '</button>';
                 }).join('') + '</div></div>' +
+                (product.fonts && product.fonts.length ? '<div class="p-4 rounded-2xl border border-gray-700 bg-[#141a2b]"><h3 class="font-bold mb-3"><i class="fas fa-pen-nib ml-1 text-accent"></i>اكتب النص واختر نوع الخط</h3>' +
+                    '<input type="text" maxlength="60" oninput="setCustomText(' + productId + ', this.value)" placeholder="اكتب الاسم أو العبارة هنا" class="w-full px-3 py-3 border border-gray-700 rounded-lg input-focus outline-none mb-3">' +
+                    '<div id="font-preview-' + productId + '" class="rounded-xl bg-white text-black text-center py-6 px-3 mb-3 break-words" style="font-size:30px;line-height:1.5;opacity:.45;font-family:' + fontStack(getFont(product.fonts[0])) + '">اكتب النص هنا لمعاينته</div>' +
+                    '<div class="flex gap-2 flex-wrap">' + product.fonts.map(getFont).filter(Boolean).map(function(f, i) {
+                        return '<button type="button" class="size-option font-chip-' + productId + (i === 0 ? ' selected' : '') + '" style="padding:0 14px;font-family:' + fontStack(f) + ';font-size:17px" onclick="pickFont(' + productId + ', \'' + f.id + '\', this)">' + escapeHtml(f.name) + '</button>';
+                    }).join('') + '</div></div>' : '') +
                 '<div class="flex items-center gap-2">' +
                 (product.stockStatus !== 'out' ? '<span class="text-green-600 font-medium"><i class="fas fa-check-circle ml-1"></i>متوفر في المخزون</span>' :
                  '<span class="text-red-500 font-medium"><i class="fas fa-times-circle ml-1"></i>نفد المخزون</span>') +
@@ -1317,7 +1392,7 @@
         function addToCartFromDetail(productId) {
             const st = currentProductState[productId];
             if (!st || !st.color || !st.size) { showToast('الرجاء اختيار اللون والمقاس', 'warning'); return; }
-            addToCart(productId, st.color, st.size);
+            addToCart(productId, st.color, st.size, 1, (st.text || '').trim(), st.font);
         }
 
         // زر "احجز عبر واتساب" بصفحة المنتج كان يفتح واتساب فوراً بدون أخذ اسم/هاتف/عنوان الزبون.
@@ -1328,7 +1403,7 @@
             if (!product) return;
             const st = currentProductState[productId];
             if (!st || !st.color || !st.size) { showToast('الرجاء اختيار اللون والمقاس', 'warning'); return; }
-            addToCart(productId, st.color, st.size, st.quantity || 1);
+            addToCart(productId, st.color, st.size, st.quantity || 1, (st.text || '').trim(), st.font);
             router.navigate('checkout');
         }
 
@@ -1505,7 +1580,7 @@
                 '<div class="space-y-3 mb-4">' + state.cart.map(function(item) {
                     return '<div class="flex items-center gap-3 pb-3 border-b border-gray-800 last:border-0">' +
                         '<img src="' + item.image + '" class="w-16 h-16 object-cover rounded-lg">' +
-                        '<div class="flex-1"><h4 class="font-bold text-sm">' + item.name + '</h4><p class="text-xs text-gray-400">' + item.color + ' | ' + item.size + ' | الكمية: ' + item.quantity + '</p></div>' +
+                        '<div class="flex-1"><h4 class="font-bold text-sm">' + item.name + '</h4><p class="text-xs text-gray-400">' + item.color + ' | ' + item.size + ' | الكمية: ' + item.quantity + '</p>' + itemExtraHtml(item) + '</div>' +
                         '<span class="font-bold text-accent">' + formatPrice(item.price * item.quantity) + '</span></div>';
                 }).join('') + '</div>' +
                 '<div class="flex items-center gap-2 mb-4">' +
@@ -1590,7 +1665,7 @@
             if (notes) { msg += '📝 ملاحظات: ' + notes + '\n'; }
             msg += '\n🛍️ تفاصيل الطلب:\n';
             state.cart.forEach(function(item) {
-                msg += '- ' + item.name + ' | اللون: ' + item.color + ' | القياس: ' + item.size + ' | الكمية: ' + item.quantity + ' | السعر: ' + formatPrice(item.price * item.quantity) + '\n';
+                msg += '- ' + item.name + ' | اللون: ' + item.color + ' | القياس: ' + item.size + (item.text ? ' | ' + itemExtra(item) : '') + ' | الكمية: ' + item.quantity + ' | السعر: ' + formatPrice(item.price * item.quantity) + '\n';
             });
             msg += '\n💰 المجموع: ' + formatPrice(subtotal) + '\n';
             if (appliedCoupon) { msg += '🏷️ خصم كوبون (' + appliedCoupon.code + '): -' + formatPrice(couponAmount) + '\n'; }
@@ -1762,7 +1837,7 @@
                     '<div><span class="text-sm text-gray-400">رقم الطلب:</span><span class="font-bold ml-2">' + order.id + '</span></div>' +
                     '<span class="order-status ' + statusClasses[order.status] + '">' + statusLabels[order.status] + '</span></div>' +
                     '<div class="space-y-3 mb-4">' + order.items.map(function(item) {
-                        return '<div class="flex items-center gap-3"><img src="' + item.image + '" class="w-12 h-12 object-cover rounded-lg"><div class="flex-1"><h4 class="font-bold text-sm">' + item.name + '</h4><p class="text-xs text-gray-400">' + item.color + ' | ' + item.size + ' × ' + item.quantity + '</p></div><span class="font-bold">' + formatPrice(item.price * item.quantity) + '</span></div>';
+                        return '<div class="flex items-center gap-3"><img src="' + item.image + '" class="w-12 h-12 object-cover rounded-lg"><div class="flex-1"><h4 class="font-bold text-sm">' + item.name + '</h4><p class="text-xs text-gray-400">' + item.color + ' | ' + item.size + ' × ' + item.quantity + '</p>' + itemExtraHtml(item) + '</div><span class="font-bold">' + formatPrice(item.price * item.quantity) + '</span></div>';
                     }).join('') + '</div>' +
                     '<div class="border-t pt-4 flex items-center justify-between"><span class="text-gray-400 text-sm">' + date + '</span><span class="font-bold text-lg">المجموع: ' + formatPrice(order.total) + '</span></div></div>';
             }).join('') + '</div></div>';
@@ -2204,6 +2279,13 @@
                         '<span class="color-swatch-pick" style="background-color:' + c.code + ';"></span>' +
                         '<span class="text-xs text-gray-300">' + c.name + '</span></label>';
                 }).join('') + '</div></div>' +
+                '<div><label class="text-sm text-gray-300 block mb-2">خطوط النص المخصص (اختر الخطوط المتاحة للزبون، واتركها فارغة لإلغاء الميزة)</label>' +
+                '<div id="pf-fonts" class="grid grid-cols-2 sm:grid-cols-3 gap-2">' + allFonts().map(function(f) {
+                    const on = product && (product.fonts || []).indexOf(f.id) > -1;
+                    return '<label class="color-swatch-label' + (on ? ' picked' : '') + '" style="padding:8px 10px"><input type="checkbox" class="hidden pf-font-checkbox" value="' + f.id + '"' + (on ? ' checked' : '') + ' onchange="this.closest(\'.color-swatch-label\').classList.toggle(\'picked\', this.checked)"><span style="font-family:' + fontStack(f) + ';font-size:16px;color:#e6eaf4">' + escapeHtml(f.name) + '</span></label>';
+                }).join('') + '</div>' +
+                '<div class="mt-2 flex gap-2 items-center"><input id="pf-font-name" type="text" placeholder="اسم الخط (اكتب AlgerBlanche للخط الخاص)" class="flex-1 px-3 py-2 border border-gray-700 rounded-lg text-sm outline-none">' +
+                '<label class="px-3 py-2 border border-dashed border-gray-600 rounded-lg text-xs cursor-pointer hover:border-accent"><i class="fas fa-upload ml-1"></i>رفع ملف خط<input type="file" accept=".ttf,.otf,.woff,.woff2" class="hidden" onchange="uploadCustomFont(this)"></label></div></div>' +
                 '<div><label class="text-sm text-gray-300 block mb-1">الوصف</label><textarea id="pf-desc" rows="2" class="w-full px-3 py-2 border border-gray-700 rounded-lg input-focus outline-none">' + (product ? product.description : '') + '</textarea></div>' +
                 '<button onclick="saveProductForm(' + (isEdit ? productId : 'null') + ')" class="w-full py-3 btn-primary text-white rounded-lg font-bold mt-2">' + (isEdit ? 'حفظ التعديلات' : 'إضافة المنتج') + '</button>' +
                 '</div></div>';
@@ -2299,6 +2381,7 @@
             // ما عاد الأدمن يتحكم بالكمية يدوياً، فنعتبر كل منتج "متوفر" دائماً بشكل تلقائي عند الإضافة/التعديل
             const stock = 999;
             const description = document.getElementById('pf-desc').value.trim();
+            const fonts = Array.prototype.map.call(document.querySelectorAll('#pf-fonts .pf-font-checkbox:checked'), function(cb) { return cb.value; });
 
             if (!name || !price) { showToast('الرجاء إدخال اسم المنتج والسعر', 'error'); return; }
             // اختيار قسم صار اختيارياً: يمكن حفظ المنتج بدون أي قسم، ويظهر وقتها بقسم "الكل" فقط
@@ -2314,7 +2397,7 @@
                     product.name = name; product.categories = selectedCategories; product.price = price; product.oldPrice = oldPrice;
                     product.discount = discount; product.saveAmount = saveAmount; product.images = [image];
                     product.colors = colors; product.stock = stock; product.stockStatus = stock > 0 ? (stock < 6 ? 'low' : 'available') : 'out';
-                    product.description = description; delete product.fullDescription; product.oldPrice = null;
+                    product.description = description; product.fonts = fonts; delete product.fullDescription; product.oldPrice = null;
                 }
                 showToast('تم حفظ التعديلات بنجاح');
             } else {
@@ -2323,7 +2406,7 @@
                     id: savedId, name: name, categories: selectedCategories, price: price, oldPrice: oldPrice, discount: discount, saveAmount: saveAmount,
                     images: [image], colors: colors, sizes: [{ name: 'قياسي', available: true }],
                     stock: stock, stockStatus: stock > 0 ? (stock < 6 ? 'low' : 'available') : 'out',
-                    description: description,
+                    description: description, fonts: fonts,
                     rating: 5, reviews: 0, brand: 'UTU', sizeChart: {}
                 });
                 showToast('تمت إضافة المنتج بنجاح');
@@ -2475,6 +2558,7 @@
             if (categoriesDirty) { upsertAllCategoriesToFirestore(function(success) { if (success) setCategoriesDirty(false); }); }
             retryPendingCategoryDeletes();
             if (couponsDirty) { syncCollectionToFirestore('coupons', coupons, 'code', function(success) { if (success) setCouponsDirty(false); }); }
+            syncFontsFromFirestore();
             syncProductsFromFirestore();
             syncCategoriesFromFirestore();
             syncCouponsFromFirestore();
