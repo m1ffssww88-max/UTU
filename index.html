@@ -175,6 +175,7 @@
 <link href="https://fonts.googleapis.com/css2?family=El+Messiri&display=swap" rel="stylesheet">
 <link href="https://fonts.googleapis.com/css2?family=Katibeh&display=swap" rel="stylesheet">
     <style>@font-face{font-family:"AlgerBlanche";src:local("AlgerBlanche"),local("Alger Blanche"),url("fonts/AlgerBlanche.ttf"),url("fonts/AlgerBlanche.otf"),url("AlgerBlanche.ttf");font-display:swap}</style>
+<style>.fontpick{opacity:.55}.fontpick.picked{opacity:1;border-color:#e6eaf4!important}</style>
 </head>
 <body class="font-cairo text-gray-100">
 
@@ -945,6 +946,41 @@
                 };
                 reader.readAsDataURL(file);
             });
+        }
+        // اختيار الخطوط بلوحة الإدارة: كلها مطفأة افتراضياً، والضغط على خط يفعّله فوراً مع معاينة بنفس الخط،
+        // وعند تعديل منتج موجود يُحفظ الاختيار مباشرة بدون انتظار زر الحفظ
+        function pfRefreshFonts() {
+            const boxes = document.querySelectorAll('#pf-fonts .pf-font-checkbox');
+            let n = 0;
+            boxes.forEach(function(cb) {
+                const lab = cb.closest('.fontpick'); if (cb.checked) n++;
+                lab.classList.toggle('picked', cb.checked);
+                const t = lab.querySelector('.pf-tick'); if (t) t.textContent = cb.checked ? '✔' : '○';
+            });
+            const c = document.getElementById('pf-font-count'); if (c) c.textContent = n ? '(' + n + ' محدد)' : '(لا شيء محدد)';
+        }
+        function togglePfFont(cb) {
+            pfRefreshFonts();
+            const f = getFont(cb.value), box = document.getElementById('pf-font-preview');
+            if (f && box) {
+                if (document.fonts) document.fonts.load('26px "' + f.family + '"', 'ع');
+                box.style.fontFamily = fontStack(f); box.style.opacity = 1; box.textContent = f.name + ' — نص تجريبي 123';
+            }
+            const host = document.getElementById('pf-fonts'), pid = host && host.getAttribute('data-pid');
+            if (pid) {
+                const prod = products.find(function(p) { return String(p.id) === pid; });
+                if (prod) {
+                    prod.fonts = Array.prototype.map.call(host.querySelectorAll('.pf-font-checkbox:checked'), function(x) { return x.value; });
+                    persistProducts([prod.id]); showToast('تم تطبيق اختيار الخطوط على المنتج');
+                }
+            }
+        }
+        function clearPfFonts() {
+            document.querySelectorAll('#pf-fonts .pf-font-checkbox').forEach(function(cb) { cb.checked = false; });
+            pfRefreshFonts();
+            const host = document.getElementById('pf-fonts'), pid = host && host.getAttribute('data-pid');
+            const prod = pid && products.find(function(p) { return String(p.id) === pid; });
+            if (prod) { prod.fonts = []; persistProducts([prod.id]); showToast('تم إلغاء كل الخطوط من المنتج'); }
         }
         function itemExtra(item) { return item && item.text ? 'النص: ' + item.text + ' | الخط: ' + ((getFont(item.font) || {}).name || '') : ''; }
         function itemExtraHtml(item) {
@@ -2300,10 +2336,11 @@
                         '<span class="color-swatch-pick" style="background-color:' + c.code + ';"></span>' +
                         '<span class="text-xs text-gray-300">' + c.name + '</span></label>';
                 }).join('') + '</div></div>' +
-                '<div><label class="text-sm text-gray-300 block mb-2">خطوط النص المخصص (اختر الخطوط المتاحة للزبون، واتركها فارغة لإلغاء الميزة)</label>' +
-                '<div id="pf-fonts" class="grid grid-cols-2 sm:grid-cols-3 gap-2">' + allFonts().map(function(f) {
-                    const on = product && (product.fonts || []).indexOf(f.id) > -1;
-                    return '<label class="color-swatch-label' + (on ? ' picked' : '') + '" style="padding:8px 10px"><input type="checkbox" class="hidden pf-font-checkbox" value="' + f.id + '"' + (on ? ' checked' : '') + ' onchange="this.closest(\'.color-swatch-label\').classList.toggle(\'picked\', this.checked)"><span style="font-family:' + fontStack(f) + ';font-size:16px;color:#e6eaf4">' + escapeHtml(f.name) + (fontAvailable(f) ? '' : ' <small style="color:#f59e0b">⚠ ارفع ملف الخط</small>') + '</span></label>';
+                '<div><div class="flex items-center justify-between mb-2"><span class="text-sm text-gray-300">خطوط النص المخصص <b id="pf-font-count" class="text-accent"></b></span><button type="button" onclick="clearPfFonts()" class="text-xs text-red-400 underline">إلغاء تحديد الكل</button></div>' +
+                '<div id="pf-font-preview" class="rounded-lg bg-white text-black text-center py-3 mb-2" style="font-size:26px;line-height:1.5;opacity:.45">اضغط على خط لمعاينته</div>' +
+                '<div id="pf-fonts" data-pid="' + (isEdit ? productId : '') + '" class="grid grid-cols-2 sm:grid-cols-3 gap-2">' + allFonts().map(function(f) {
+                    const on = !!(product && (product.fonts || []).indexOf(f.id) > -1);
+                    return '<label class="color-swatch-label fontpick' + (on ? ' picked' : '') + '" style="flex-direction:row;justify-content:space-between;padding:10px"><input type="checkbox" class="hidden pf-font-checkbox" value="' + f.id + '"' + (on ? ' checked' : '') + ' onchange="togglePfFont(this)"><span style="font-family:' + fontStack(f) + ';font-size:17px;color:#e6eaf4">' + escapeHtml(f.name) + (fontAvailable(f) ? '' : ' <small style="color:#f59e0b">⚠ ارفع ملف الخط</small>') + '</span><span class="pf-tick" style="font-size:18px;color:#e6eaf4">' + (on ? '✔' : '○') + '</span></label>';
                 }).join('') + '</div>' +
                 '<div class="mt-2 flex gap-2 items-center"><input id="pf-font-name" type="text" placeholder="اسم الخط (اختياري، يُؤخذ من اسم الملف)" class="flex-1 px-3 py-2 border border-gray-700 rounded-lg text-sm outline-none">' +
                 '<label class="px-3 py-2 border border-dashed border-gray-600 rounded-lg text-xs cursor-pointer hover:border-accent"><i class="fas fa-upload ml-1"></i>رفع ملفات الخطوط (عدة ملفات)<input type="file" multiple class="hidden" onchange="uploadCustomFont(this)"></label></div></div>' +
@@ -2318,6 +2355,7 @@
             const pfPreview = document.getElementById('pf-image-preview');
             if (pfPreview) { pfPreview.src = product ? product.images[0] : ''; pfPreview.classList.toggle('hidden', !(product && product.images[0])); }
             document.getElementById('pf-desc').value = product ? product.description : '';
+            pfRefreshFonts();
         }
 
         // يضغط الصورة داخل المتصفح نفسه (canvas) لحد آمن قبل حفظها، بدل الاعتماد على Firebase Storage
