@@ -922,20 +922,29 @@
                 snap.forEach(function(doc) { const d = doc.data(); if (d && d.data) registerCustomFont({ id: doc.id, name: d.name, family: d.family, data: d.data }); });
             }, function(e) { console.error('تعذّر تحميل الخطوط:', e); });
         }
+        function normFont(x) { return String(x).toLowerCase().replace(/\.[^.]+$/, '').replace(/[^a-z\u0600-\u06ff]/g, ''); }
         function uploadCustomFont(inputEl) {
-            const file = inputEl.files && inputEl.files[0]; if (!file) return;
-            if (file.size > 700 * 1024) { showToast('حجم ملف الخط كبير (الحد 700 كيلوبايت)', 'error'); inputEl.value = ''; return; }
+            const files = Array.prototype.slice.call(inputEl.files || []); if (!files.length) return;
             const nameEl = document.getElementById('pf-font-name');
-            const name = (nameEl && nameEl.value.trim()) || file.name.replace(/\.[^.]+$/, '');
-            const isAlger = /alger/i.test(name) || /alger/i.test(file.name);
-            const id = isAlger ? 'alger' : 'f' + Date.now();
-            const family = isAlger ? 'AlgerBlanche' : 'CF' + Date.now();
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const d = { name: isAlger ? 'AlgerBlanche' : name, family: family, data: e.target.result };
-                db.collection('fonts').doc(id).set(d).then(function() { showToast('تمت إضافة الخط، اختاره من القائمة'); registerCustomFont({ id: id, name: d.name, family: family, data: d.data }); }).catch(function(err) { showToast('فشل رفع الخط: ' + (err && err.code ? err.code : ''), 'error'); });
-            };
-            reader.readAsDataURL(file); inputEl.value = '';
+            const typed = nameEl ? nameEl.value.trim() : '';
+            let done = 0, okCount = 0;
+            files.forEach(function(file) {
+                if (file.size > 700 * 1024) { showToast('الملف "' + file.name + '" كبير (الحد 700 كيلوبايت)', 'error'); if (++done === files.length) inputEl.value = ''; return; }
+                const key = normFont(files.length === 1 && typed ? typed : file.name);
+                // نربط الملف بخط من القائمة الأساسية إذا تطابق الاسم (مثلاً Amiri-Regular.ttf يصير خط أميري)
+                const match = FONT_LIST.find(function(f) { const k = normFont(f.family), n = normFont(f.name); return key.indexOf(k) === 0 || k.indexOf(key) === 0 && key.length > 3 || key === n; });
+                const id = match ? match.id : 'f' + Date.now() + Math.floor(Math.random() * 1000);
+                const family = match ? match.family : 'CF' + id;
+                const name = match ? match.name : (typed || file.name.replace(/\.[^.]+$/, ''));
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const d = { name: name, family: family, data: e.target.result };
+                    db.collection('fonts').doc(id).set(d).then(function() { okCount++; registerCustomFont({ id: id, name: name, family: family, data: d.data }); })
+                      .catch(function(err) { showToast('فشل رفع الخط "' + name + '": ' + (err && err.code ? err.code : 'خطأ'), 'error'); })
+                      .then(function() { if (++done === files.length) { inputEl.value = ''; if (okCount) showToast('تم رفع ' + okCount + ' خط/خطوط بنجاح'); } });
+                };
+                reader.readAsDataURL(file);
+            });
         }
         function itemExtra(item) { return item && item.text ? 'النص: ' + item.text + ' | الخط: ' + ((getFont(item.font) || {}).name || '') : ''; }
         function itemExtraHtml(item) {
@@ -2296,8 +2305,8 @@
                     const on = product && (product.fonts || []).indexOf(f.id) > -1;
                     return '<label class="color-swatch-label' + (on ? ' picked' : '') + '" style="padding:8px 10px"><input type="checkbox" class="hidden pf-font-checkbox" value="' + f.id + '"' + (on ? ' checked' : '') + ' onchange="this.closest(\'.color-swatch-label\').classList.toggle(\'picked\', this.checked)"><span style="font-family:' + fontStack(f) + ';font-size:16px;color:#e6eaf4">' + escapeHtml(f.name) + (fontAvailable(f) ? '' : ' <small style="color:#f59e0b">⚠ ارفع ملف الخط</small>') + '</span></label>';
                 }).join('') + '</div>' +
-                '<div class="mt-2 flex gap-2 items-center"><input id="pf-font-name" type="text" placeholder="اسم الخط (اكتب AlgerBlanche للخط الخاص)" class="flex-1 px-3 py-2 border border-gray-700 rounded-lg text-sm outline-none">' +
-                '<label class="px-3 py-2 border border-dashed border-gray-600 rounded-lg text-xs cursor-pointer hover:border-accent"><i class="fas fa-upload ml-1"></i>رفع ملف خط<input type="file" accept=".ttf,.otf,.woff,.woff2" class="hidden" onchange="uploadCustomFont(this)"></label></div></div>' +
+                '<div class="mt-2 flex gap-2 items-center"><input id="pf-font-name" type="text" placeholder="اسم الخط (اختياري، يُؤخذ من اسم الملف)" class="flex-1 px-3 py-2 border border-gray-700 rounded-lg text-sm outline-none">' +
+                '<label class="px-3 py-2 border border-dashed border-gray-600 rounded-lg text-xs cursor-pointer hover:border-accent"><i class="fas fa-upload ml-1"></i>رفع ملفات الخطوط (عدة ملفات)<input type="file" multiple accept=".ttf,.otf,.woff,.woff2" class="hidden" onchange="uploadCustomFont(this)"></label></div></div>' +
                 '<div><label class="text-sm text-gray-300 block mb-1">الوصف</label><textarea id="pf-desc" rows="2" class="w-full px-3 py-2 border border-gray-700 rounded-lg input-focus outline-none">' + (product ? product.description : '') + '</textarea></div>' +
                 '<button onclick="saveProductForm(' + (isEdit ? productId : 'null') + ')" class="w-full py-3 btn-primary text-white rounded-lg font-bold mt-2">' + (isEdit ? 'حفظ التعديلات' : 'إضافة المنتج') + '</button>' +
                 '</div></div>';
