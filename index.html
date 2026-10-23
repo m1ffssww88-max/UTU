@@ -143,6 +143,12 @@
         .size-btn:disabled { color: #e6eaf4; }
         .text-green-400, .text-green-600, .text-red-400, .text-red-500, .text-red-600, .text-yellow-500, .text-green-500 { color: #c8cfe3 !important; }
         .bg-green-500, .bg-red-500, .bg-yellow-500, .bg-blue-500, .bg-green-600, .bg-red-600 { color: #e6eaf4; }
+        /* الصور المصغرة: صغيرة افتراضياً، والمحددة تكبر بحركة ناعمة */
+        .pd-thumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 76px; }
+        .pd-thumb { width: 48px; height: 48px; flex: 0 0 auto; transition: width .25s ease, height .25s ease, border-color .25s ease, box-shadow .25s ease, opacity .25s ease; opacity: .75; }
+        .pd-thumb:hover { opacity: 1; }
+        .pd-thumb.active { width: 72px; height: 72px; opacity: 1; box-shadow: 0 4px 12px rgba(0,0,0,.18); }
+        .pd-thumb img { width: 100%; height: 100%; object-fit: cover; }
 </style>
     <style id="light-theme">
         /* تصميم فاتح بسيط: خلفية بيضاء، خط خفيف، بطاقات رمادية فاتحة */
@@ -1480,8 +1486,8 @@
                 '<div class="img-wrap relative bg-[#1a2236] rounded-2xl overflow-hidden border border-gray-800 aspect-square" data-pd="' + productId + '" style="touch-action:pan-y">' + IMG_LOADER_HTML +
                 '<img id="main-image-' + productId + '" src="' + product.images[0] + '" alt="' + product.name + '" draggable="false" class="w-full h-full object-cover zoom-img cursor-zoom-in" onclick="pdZoom(' + productId + ')">' +
                 '</div>' +
-                (product.images.length > 1 ? '<div id="pd-thumbs-' + productId + '" class="flex gap-2 flex-wrap">' + product.images.map(function(img, idx) {
-                    return '<div class="img-wrap rounded-xl overflow-hidden border-2 ' + (idx === 0 ? 'border-accent' : 'border-gray-700') + ' cursor-pointer hover:border-accent transition-colors" style="width:72px;height:72px;flex:0 0 72px" onclick="pdShow(' + productId + ', ' + idx + ')">' + IMG_LOADER_HTML +
+                (product.images.length > 1 ? '<div id="pd-thumbs-' + productId + '" class="pd-thumbs">' + product.images.map(function(img, idx) {
+                    return '<div class="img-wrap pd-thumb rounded-xl overflow-hidden border-2 ' + (idx === 0 ? 'border-accent active' : 'border-gray-700') + ' cursor-pointer" onclick="pdShow(' + productId + ', ' + idx + ')">' + IMG_LOADER_HTML +
                         '<img src="' + img + '" draggable="false" class="w-full h-full object-cover"></div>';
                 }).join('') + '</div>' : '') +
                 '<div><h3 class="font-bold mb-3">الألوان المتوفرة</h3><div class="flex gap-3 flex-wrap">' + product.colors.map(function(c) {
@@ -1507,12 +1513,6 @@
                         'onclick="' + (s.available ? 'selectSizeDetail(' + productId + ', \'' + s.name + '\', this)' : 'showSizeUnavailableToast()') + '" ' +
                         (s.available ? '' : 'disabled') + '>' + s.name + '</button>';
                 }).join('') + '</div></div>' +
-                (usableFonts(product).length ? '<div class="p-4 rounded-2xl border border-gray-700 bg-[#141a2b]"><h3 class="font-bold mb-3"><i class="fas fa-pen-nib ml-1 text-accent"></i>اكتب النص واختر نوع الخط</h3>' +
-                    '<input type="text" maxlength="60" oninput="setCustomText(' + productId + ', this.value)" placeholder="اكتب الاسم أو العبارة هنا" class="w-full px-3 py-3 border border-gray-700 rounded-lg input-focus outline-none mb-3">' +
-                    '<div id="font-preview-' + productId + '" class="rounded-xl text-center py-6 px-3 mb-3 break-words" style="background:#ffffff;color:#9ca3af;border:1px solid #d1d5db;min-height:96px;display:flex;align-items:center;justify-content:center;font-size:30px;line-height:1.6;font-family:' + fontStack(usableFonts(product)[0]) + '">اكتب النص هنا لمعاينته</div>' +
-                    '<div class="flex gap-2 flex-wrap">' + usableFonts(product).map(function(f, i) {
-                        return '<button type="button" class="size-option font-chip-' + productId + (i === 0 ? ' selected' : '') + '" style="padding:0 14px;font-family:' + fontStack(f) + ';font-size:17px" onclick="pickFont(' + productId + ', \'' + f.id + '\', this)">' + escapeHtml(f.name) + '</button>';
-                    }).join('') + '</div></div>' : '') +
                 '<div class="flex items-center gap-2">' +
                 (product.stockStatus !== 'out' ? '<span class="text-green-600 font-medium"><i class="fas fa-check-circle ml-1"></i>متوفر في المخزون</span>' :
                  '<span class="text-red-500 font-medium"><i class="fas fa-times-circle ml-1"></i>نفد المخزون</span>') +
@@ -2689,7 +2689,7 @@
             }
             const box = document.getElementById('pd-thumbs-' + pid);
             if (box) Array.prototype.forEach.call(box.children, function(el, i) {
-                el.classList.toggle('border-accent', i === idx); el.classList.toggle('border-gray-700', i !== idx);
+                el.classList.toggle('border-accent', i === idx); el.classList.toggle('border-gray-700', i !== idx); el.classList.toggle('active', i === idx);
             });
         }
         function pdZoom(pid) {
