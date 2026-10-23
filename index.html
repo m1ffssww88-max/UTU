@@ -193,8 +193,42 @@
         .dfont-chip:hover { border-color:#d4af37; }
         .dfont-chip.selected { background:#d4af37; color:#111; border-color:#d4af37; }
     </style>
+    <!-- شاشة التحميل: تخفي الموقع بالكامل حتى تصل أحدث البيانات من السحابة -->
+    <style id="utu-loader-css">
+        html.utu-loading, html.utu-loading body { overflow: hidden !important; }
+        #utu-loader { position: fixed; inset: 0; z-index: 2147483647; background: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; opacity: 1; transition: opacity .45s ease, visibility .45s ease; }
+        #utu-loader.utu-hide { opacity: 0; visibility: hidden; pointer-events: none; }
+        #utu-loader .utu-spin { width: 54px; height: 54px; border-radius: 50%; border: 4px solid #e5e7eb; border-top-color: #111; animation: utuSpin .8s linear infinite; }
+        #utu-loader .utu-txt { font-family: 'Cairo', sans-serif; font-size: 15px; color: #111; letter-spacing: .02em; }
+        @keyframes utuSpin { to { transform: rotate(360deg); } }
+    </style>
+    <script>
+        // الموقع يبقى مخفياً خلف شاشة التحميل حتى تصل البيانات الأساسية (المنتجات + التصنيفات + الإعدادات)
+        // من Firestore ويكتمل رسمها. إذا تأخر الاتصال أكثر من 10 ثواني نفتح الموقع بالنسخة المحفوظة.
+        document.documentElement.classList.add('utu-loading');
+        (function() {
+            var need = { products: 1, categories: 1, settings: 1 }, done = false;
+            function finish() {
+                if (done) return; done = true;
+                var go = function() {
+                    document.documentElement.classList.remove('utu-loading');
+                    var el = document.getElementById('utu-loader');
+                    if (el) { el.classList.add('utu-hide'); setTimeout(function() { if (el.parentNode) el.parentNode.removeChild(el); }, 600); }
+                };
+                // مهلة قصيرة ليكتمل إعادة رسم الصفحة بالبيانات الجديدة قبل الكشف
+                setTimeout(function() { requestAnimationFrame(go); }, 450);
+            }
+            window.utuReady = function(name) {
+                delete need[name];
+                for (var k in need) return;
+                finish();
+            };
+            setTimeout(finish, 10000);
+        })();
+    </script>
 </head>
 <body class="font-cairo text-gray-100">
+    <div id="utu-loader" role="status" aria-live="polite"><div class="utu-spin"></div><div class="utu-txt">جارِ التحميل...</div></div>
 
     <!-- Toast Container -->
     <div id="toast-container" class="fixed top-20 left-4 z-50 space-y-2"></div>
@@ -749,6 +783,7 @@
         }
         function syncProductsFromFirestore() {
             db.collection('products').onSnapshot(function(snapshot) {
+                setTimeout(function() { window.utuReady && window.utuReady('products'); }, 0);
                 if (snapshot.empty) return; // لا يوجد شيء بفايرستور بعد
                 if (snapshot.metadata.hasPendingWrites) return; // هذا التحديث ناتج عن كتابتنا المحلية نفسها، وليس من جهاز ثاني
                 if (productsDirty) return; // عندنا تعديل محلي لسا ما اتأكدت كتابته، لا نكتب فوقه
@@ -762,7 +797,7 @@
                 try { localStorage.setItem('utu_products', JSON.stringify(products)); } catch (e) {}
                 if (dataSig(products) === beforeSig) return; // نفس المعروض بالضبط، لا داعي لإعادة الرسم
                 router.refreshSoon();
-            }, function(e) { console.error('تعذّر الاستماع لتحديثات المنتجات من Firestore:', e); showSyncError('تعذّر الاستماع لتحديثات المنتجات — الكود: ' + (e && e.code ? e.code : '؟') + ' — الرسالة: ' + (e && e.message ? e.message : String(e))); });
+            }, function(e) { console.error('تعذّر الاستماع لتحديثات المنتجات من Firestore:', e); window.utuReady && window.utuReady('products'); showSyncError('تعذّر الاستماع لتحديثات المنتجات — الكود: ' + (e && e.code ? e.code : '؟') + ' — الرسالة: ' + (e && e.message ? e.message : String(e))); });
         }
         function getNextProductId() {
             return products.reduce(function(max, p) { return Math.max(max, p.id); }, 0) + 1;
@@ -849,6 +884,7 @@
         }
         function syncCategoriesFromFirestore() {
             db.collection('categories').onSnapshot(function(snapshot) {
+                setTimeout(function() { window.utuReady && window.utuReady('categories'); }, 0);
                 if (snapshot.empty) return;
                 if (snapshot.metadata.hasPendingWrites) return;
                 if (categoriesDirty) return;
@@ -859,7 +895,7 @@
                 try { localStorage.setItem('utu_categories', JSON.stringify(categories)); } catch (e) {}
                 if (dataSig(categories) === beforeSig) return;
                 router.refreshSoon();
-            }, function(e) { console.error('تعذّر الاستماع لتحديثات الأقسام من Firestore:', e); showSyncError('تعذّر الاستماع لتحديثات الأقسام — الكود: ' + (e && e.code ? e.code : '؟') + ' — الرسالة: ' + (e && e.message ? e.message : String(e))); });
+            }, function(e) { console.error('تعذّر الاستماع لتحديثات الأقسام من Firestore:', e); window.utuReady && window.utuReady('categories'); showSyncError('تعذّر الاستماع لتحديثات الأقسام — الكود: ' + (e && e.code ? e.code : '؟') + ' — الرسالة: ' + (e && e.message ? e.message : String(e))); });
         }
         function getNextCategoryId(base) {
             let slug = (base || 'قسم').toString().trim();
@@ -1435,18 +1471,27 @@
             const selectedColor = firstAvailableColor ? firstAvailableColor.name : '';
             const selectedSize = firstAvailableSize ? firstAvailableSize.name : '';
             currentProductState[productId] = { color: selectedColor, size: selectedSize, quantity: 1, text: '', font: (usableFonts(product)[0] || {}).id || '' };
+            pdIdx[productId] = 0;
 
             return '<div class="max-w-7xl mx-auto px-4 py-8 fade-in">' +
                 '<div class="flex justify-between items-center mb-4"><button onclick="router.back()" aria-label="رجوع" class="h-11 px-4 rounded-full border border-gray-700 bg-[#1a2236] text-gray-100 flex items-center justify-center gap-2 text-base font-bold hover:border-accent hover:text-accent transition-colors"><i class="fas fa-arrow-right"></i><span>رجوع</span></button><button onclick="router.back()" aria-label="إغلاق" class="w-11 h-11 rounded-full border border-gray-700 bg-[#1a2236] text-gray-100 flex items-center justify-center text-xl hover:border-accent hover:text-accent transition-colors"><i class="fas fa-times"></i></button></div>' +
                 '<div class="grid grid-cols-1 lg:grid-cols-2 gap-8">' +
                 '<div class="space-y-4">' +
-                '<div class="img-wrap relative bg-[#1a2236] rounded-2xl overflow-hidden border border-gray-800 aspect-square">' + IMG_LOADER_HTML +
-                '<img id="main-image-' + productId + '" src="' + product.images[0] + '" alt="' + product.name + '" class="w-full h-full object-cover zoom-img cursor-zoom-in" onclick="openImageModal(\'' + product.images[0] + '\')">' +
+                '<div class="img-wrap relative bg-[#1a2236] rounded-2xl overflow-hidden border border-gray-800 aspect-square" data-pd="' + productId + '" style="touch-action:pan-y">' + IMG_LOADER_HTML +
+                '<img id="main-image-' + productId + '" src="' + product.images[0] + '" alt="' + product.name + '" draggable="false" class="w-full h-full object-cover zoom-img cursor-zoom-in" onclick="pdZoom(' + productId + ')">' +
                 '</div>' +
-                '<div class="grid grid-cols-4 gap-3">' + product.images.map(function(img, idx) {
-                    return '<div class="img-wrap aspect-square rounded-xl overflow-hidden border-2 ' + (idx === 0 ? 'border-accent' : 'border-gray-700') + ' cursor-pointer hover:border-accent transition-colors" onclick="changeMainImage(\'' + img + '\', this, ' + productId + ')">' + IMG_LOADER_HTML +
-                        '<img src="' + img + '" class="w-full h-full object-cover"></div>';
+                (product.images.length > 1 ? '<div id="pd-thumbs-' + productId + '" class="flex gap-2 flex-wrap">' + product.images.map(function(img, idx) {
+                    return '<div class="img-wrap rounded-xl overflow-hidden border-2 ' + (idx === 0 ? 'border-accent' : 'border-gray-700') + ' cursor-pointer hover:border-accent transition-colors" style="width:72px;height:72px;flex:0 0 72px" onclick="pdShow(' + productId + ', ' + idx + ')">' + IMG_LOADER_HTML +
+                        '<img src="' + img + '" draggable="false" class="w-full h-full object-cover"></div>';
+                }).join('') + '</div>' : '') +
+                '<div><h3 class="font-bold mb-3">الألوان المتوفرة</h3><div class="flex gap-3 flex-wrap">' + product.colors.map(function(c) {
+                    return '<div class="flex flex-col items-center gap-1">' +
+                        '<div class="color-option ' + (c.available ? '' : 'opacity-50') + ' ' + (c.available && c.name === selectedColor ? 'selected' : '') + '" style="background-color:' + c.code + ';' + (c.code === '#ffffff' ? 'border:2px solid #ddd;' : '') + '" ' +
+                        'onclick="' + (c.available ? 'selectColorDetail(' + productId + ', \'' + c.name + '\', this)' : 'showUnavailableToast()') + '" ' +
+                        'title="' + c.name + (!c.available ? ' (غير متوفر)' : '') + '"></div>' +
+                        '<span class="text-xs ' + (c.available ? 'text-gray-300' : 'text-gray-400') + '">' + c.name + '</span></div>';
                 }).join('') + '</div></div>' +
+                '</div>' +
                 '<div class="space-y-6">' +
                 '<div>' +
                 '<div class="flex items-center gap-2 mb-2"><span class="text-sm text-gray-400">' + product.brand + '</span></div>' +
@@ -1456,13 +1501,6 @@
                 '<span class="text-3xl font-bold text-accent">' + formatPrice(product.price) + '</span>' +
                 '</div>' +
                 '<p class="fx-desc text-gray-300 leading-relaxed"' + fxAttr(product.descFont,'desc') + '>' + product.description + '</p></div>' +
-                '<div><h3 class="font-bold mb-3">الألوان المتوفرة</h3><div class="flex gap-3 flex-wrap">' + product.colors.map(function(c) {
-                    return '<div class="flex flex-col items-center gap-1">' +
-                        '<div class="color-option ' + (c.available ? '' : 'opacity-50') + ' ' + (c.available && c.name === selectedColor ? 'selected' : '') + '" style="background-color:' + c.code + ';' + (c.code === '#ffffff' ? 'border:2px solid #ddd;' : '') + '" ' +
-                        'onclick="' + (c.available ? 'selectColorDetail(' + productId + ', \'' + c.name + '\', this)' : 'showUnavailableToast()') + '" ' +
-                        'title="' + c.name + (!c.available ? ' (غير متوفر)' : '') + '"></div>' +
-                        '<span class="text-xs ' + (c.available ? 'text-gray-300' : 'text-gray-400') + '">' + c.name + '</span></div>';
-                }).join('') + '</div></div>' +
                 '<div><div class="flex items-center justify-between mb-3"><h3 class="font-bold">الحجم / النوع</h3></div>' +
                 '<div class="flex gap-3 flex-wrap">' + product.sizes.map(function(s) {
                     return '<button class="size-option ' + (s.available ? (s.name === selectedSize ? 'selected' : '') : 'bg-gray-300 text-gray-400') + '" ' +
@@ -2630,6 +2668,53 @@
             }
         };
 
+        // ==================== PRODUCT GALLERY (تقليب الصور بالسحب أو بالمصغرات) ====================
+        const pdIdx = {};
+        let pdNoClickUntil = 0;
+        function pdShow(pid, idx, fromX) {
+            const p = products.find(function(x) { return x.id === pid; }); if (!p || !p.images || !p.images.length) return;
+            const n = p.images.length; idx = ((idx % n) + n) % n;
+            const main = document.getElementById('main-image-' + pid); if (!main) return;
+            const src = p.images[idx];
+            pdIdx[pid] = idx;
+            if (main.getAttribute('src') !== src) {
+                const w = main.closest('.img-wrap'); if (w) w.classList.remove('img-ready', 'img-error');
+                main.src = src;
+            }
+            if (fromX) {
+                main.style.transition = 'none'; main.style.transform = 'translateX(' + fromX + 'px)'; main.style.opacity = '.25';
+                requestAnimationFrame(function() { requestAnimationFrame(function() {
+                    main.style.transition = 'transform .25s ease, opacity .25s ease'; main.style.transform = 'translateX(0)'; main.style.opacity = '1';
+                }); });
+            }
+            const box = document.getElementById('pd-thumbs-' + pid);
+            if (box) Array.prototype.forEach.call(box.children, function(el, i) {
+                el.classList.toggle('border-accent', i === idx); el.classList.toggle('border-gray-700', i !== idx);
+            });
+        }
+        function pdZoom(pid) {
+            if (Date.now() < pdNoClickUntil) return;
+            const p = products.find(function(x) { return x.id === pid; }); if (!p) return;
+            openImageModal(p.images[pdIdx[pid] || 0]);
+        }
+        (function() {
+            let sx = null, sy = 0, pid = null;
+            document.addEventListener('touchstart', function(e) {
+                const w = e.target.closest && e.target.closest('[data-pd]');
+                if (!w) { sx = null; return; }
+                pid = Number(w.getAttribute('data-pd')); sx = e.touches[0].clientX; sy = e.touches[0].clientY;
+            }, { passive: true });
+            document.addEventListener('touchend', function(e) {
+                if (sx === null) return;
+                const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy;
+                sx = null;
+                if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy) * 1.2) return;
+                pdNoClickUntil = Date.now() + 350;
+                // الصفحة RTL: الصور التالية على يسار الحالية، فالسحب لليمين يُظهر التالية (تدخل من اليسار) والسحب لليسار يرجع للسابقة
+                pdShow(pid, (pdIdx[pid] || 0) + (dx > 0 ? 1 : -1), dx > 0 ? -40 : 40);
+            }, { passive: true });
+        })();
+
         // ==================== PRODUCT IMAGES (عدة صور للمنتج) ====================
         // الصور تُخزَّن داخل مستند المنتج بفايرستور (base64) ولذلك نحافظ على مجموع حجمها تحت حد المستند (1MB)
         let pfImages = [];
@@ -2730,12 +2815,13 @@
         }
         function syncSiteSettingsFromFirestore() {
             db.collection('meta').doc('site_settings').onSnapshot(function(doc) {
+                setTimeout(function() { window.utuReady && window.utuReady('settings'); }, 0);
                 if (doc.metadata.hasPendingWrites || !doc.exists) return;
                 siteSettings = Object.assign({}, SITE_DEFAULTS, doc.data());
                 try { localStorage.setItem('utu_site_settings', JSON.stringify(siteSettings)); } catch (e) {}
                 applySiteSettings();
                 if (router.currentPage === 'about') router.refreshSoon();
-            }, function(e) { console.error('تعذّر تحميل إعدادات الموقع:', e); });
+            }, function(e) { console.error('تعذّر تحميل إعدادات الموقع:', e); window.utuReady && window.utuReady('settings'); });
         }
         function renderAdminSettings() {
             const s = siteSettings;
